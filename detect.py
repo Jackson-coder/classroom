@@ -32,6 +32,7 @@ import sys
 from pathlib import Path
 
 import torch
+import numpy as np
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -45,7 +46,21 @@ from utils.general import (LOGGER, Profile, check_file, check_img_size, check_im
                            increment_path, non_max_suppression, print_args, scale_boxes, strip_optimizer, xyxy2xywh)
 from utils.plots import Annotator, colors, save_one_box
 from utils.torch_utils import select_device, smart_inference_mode
+from warning import warning_v1 as Wa
+from PIL import Image, ImageDraw, ImageFont
 
+def cv2AddChineseText(img, text, position, textColor=(0, 255, 0), textSize=30):
+    if (isinstance(img, np.ndarray)):  # 判断是否OpenCV图片类型
+        img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    # 创建一个可以在给定图像上绘图的对象
+    draw = ImageDraw.Draw(img)
+    # 字体的格式
+    fontStyle = ImageFont.truetype(
+        "simsun.ttc", textSize, encoding="utf-8")
+    # 绘制文本
+    draw.text(position, text, textColor, font=fontStyle)
+    # 转换回OpenCV格式
+    return cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)
 
 @smart_inference_mode()
 def run(
@@ -76,6 +91,7 @@ def run(
         half=False,  # use FP16 half-precision inference
         dnn=False,  # use OpenCV DNN for ONNX inference
         vid_stride=1,  # video frame-rate stride
+        person_number = 30
 ):
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
@@ -111,6 +127,7 @@ def run(
     # Run inference
     model.warmup(imgsz=(1 if pt or model.triton else bs, 3, *imgsz))  # warmup
     seen, windows, dt = 0, [], (Profile(), Profile(), Profile())
+    first_frame = True
     for path, im, im0s, vid_cap, s in dataset:
         with dt[0]:
             im = torch.from_numpy(im).to(model.device)
@@ -126,12 +143,14 @@ def run(
 
         # NMS
         with dt[2]:
-            pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)
+            pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det, multiclsNMS=False)
 
         # Second-stage classifier (optional)
         # pred = utils.general.apply_classifier(pred, classifier_model, im, im0s)
 
         # Process predictions
+        
+                    
         for i, det in enumerate(pred):  # per image
             seen += 1
             if webcam:  # batch_size >= 1
@@ -150,24 +169,44 @@ def run(
             if len(det):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()
-
+                
+                
+                # output = np.array([out.cpu().numpy() for out in det])
+                # if first_frame:
+                #     first_frame = False
+                #     wa = Wa(output)
+                # detect_lying, flag, seat = wa.countAndAction(output,person_number)
+                # # 缺席
+                # if flag[0] == True:
+                #     print('缺席')
+                #     flag[1] = person_number if flag[1] > person_number else flag[1]
+                # # 躺卧
+                # for *xyxy, conf, cls in reversed(detect_lying):
+                #     if save_img or save_crop or view_img:  # Add bbox to image
+                #         label = f'lying: {conf:.2f}' 
+                #         annotator.box_label(xyxy, label, color=colors(1, True))
+                # # 离席
+                # for *xyxy, state in seat[..., 4:9]:
+                #     if save_img and state == 1:  
+                #         label = f'leave' 
+                #         annotator.box_label(xyxy, label, color=colors(2, True))
+                        
                 # Print results
                 for c in det[:, 5].unique():
                     n = (det[:, 5] == c).sum()  # detections per class
                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
-
-                # Write results
+                    
                 for *xyxy, conf, cls in reversed(det):
                     if save_txt:  # Write to file
                         xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
                         line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
                         with open(f'{txt_path}.txt', 'a') as f:
                             f.write(('%g ' * len(line)).rstrip() % line + '\n')
-
-                    if save_img or save_crop or view_img:  # Add bbox to image
+                    if save_img or save_crop or view_img:  # Add bbox to image    
                         c = int(cls)  # integer class
                         label = None if hide_labels else (names[c] if hide_conf else f'{names[c]} {conf:.2f}')
                         annotator.box_label(xyxy, label, color=colors(c, True))
+                        
                     if save_crop:
                         save_one_box(xyxy, imc, file=save_dir / 'crops' / names[c] / f'{p.stem}.jpg', BGR=True)
 
@@ -196,8 +235,12 @@ def run(
                             h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                         else:  # stream
                             fps, w, h = 30, im0.shape[1], im0.shape[0]
+                        
+                         
                         save_path = str(Path(save_path).with_suffix('.mp4'))  # force *.mp4 suffix on results videos
                         vid_writer[i] = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+                    # text = "应到人数:"+str(person_number)+" " + "实到人数:"+str(flag[1])
+                    # im0 = cv2AddChineseText(im0, text, (40, 50),(0, 255, 0), 30)   
                     vid_writer[i].write(im0)
 
         # Print time (inference-only)
@@ -219,8 +262,8 @@ def parse_opt():
     parser.add_argument('--source', type=str, default=ROOT / 'data/images', help='file/dir/URL/glob/screen/0(webcam)')
     parser.add_argument('--data', type=str, default=ROOT / 'data/coco128.yaml', help='(optional) dataset.yaml path')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
-    parser.add_argument('--conf-thres', type=float, default=0.25, help='confidence threshold')
-    parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
+    parser.add_argument('--conf-thres', type=float, default=0.6, help='confidence threshold')
+    parser.add_argument('--iou-thres', type=float, default=0.4, help='NMS IoU threshold')
     parser.add_argument('--max-det', type=int, default=1000, help='maximum detections per image')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--view-img', action='store_true', help='show results')
@@ -247,6 +290,7 @@ def parse_opt():
     print_args(vars(opt))
     return opt
 
+# python detect.py --weights runs/train/exp2/weights/best.pt --source data/videos/7 --data school.yaml --img 960 --device 2
 
 def main(opt):
     check_requirements(exclude=('tensorboard', 'thop'))
