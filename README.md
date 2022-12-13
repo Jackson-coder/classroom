@@ -84,22 +84,15 @@ the latest YOLOv5 [release](https://github.com/ultralytics/yolov5/releases) and 
 ```bash
 python detect.py --weights runs/train/exp2/weights/best.pt --source data/videos --data school.yaml --img 960 --device 2
 ```
-or add the tracker(**Recomand**)
-```bash
-python track.py --device 3 --source yolov5/test_videos/test2.mp4 --yolo-weights weights/yolov5l.pt --reid-weights weights/osnet_x1_0_imagenet.pt --img 1280 --save-vid --agnostic-nms
-```
+
 </details>
 
 <details>
 <summary>Training</summary>
 
-
-
 ```bash
 python train.py --img 960 --batch 4 --workers 4 --device 2 --epochs 300 --cfg yolov5l.yaml --data school.yaml --weights yolov5l.pt
 ```
-
-
 </details>
 
 
