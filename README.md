@@ -99,7 +99,6 @@ python track.py --device 3 --source yolov5/test_videos/test2.mp4 --yolo-weights 
 python train.py --img 960 --batch 4 --workers 4 --device 2 --epochs 300 --cfg yolov5l.yaml --data school.yaml --weights yolov5l.pt
 ```
 
-<img width="800" src="https://user-images.githubusercontent.com/26833433/90222759-949d8800-ddc1-11ea-9fa1-1c97eed2b963.png">
 
 </details>
 
